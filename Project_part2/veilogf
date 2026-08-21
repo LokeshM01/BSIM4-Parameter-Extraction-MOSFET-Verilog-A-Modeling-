@@ -1,0 +1,141 @@
+
+`include "disciplines.vams"
+`include "constants.vams"
+
+module nmos_has(d,g,s,b);
+inout d,g,s,b;
+electrical d,g,s,b;
+electrical gnd; ground gnd;
+
+//threshold model parameters
+
+parameter real L=0.7E-6             from[0.0:inf];
+parameter real W=1E-6             from[0.0:inf];
+parameter real ni=1.5E10            from[0.0:inf];
+parameter real Nsub=5E17            from[0.0:inf];
+parameter real VFBCV=-1              from[-2.0:inf];
+parameter real Tox=1E-6             from[0.0:inf];
+parameter real EPSROX=3.9           from[0.0:inf];
+parameter real EPSI=11.7         from[0.0:inf];
+parameter real q=1.602E-19          from[0.0:inf];
+parameter real EPS0=8.85E-14 from[0.0:inf];
+parameter real DELTA=0.0001           from[0.0:inf];
+parameter real m=2                from[1.0:inf];
+parameter real vt=0.026             from[0.0:inf];
+parameter real VTH0=0.3759             from[0.0:inf];
+parameter real K1=0.3045              from[0.0:inf];
+parameter real n=2                from[1:2];
+parameter real Voff=0		    from[0:inf];
+
+//mobility degradation
+
+parameter real U0=0.07764			        from[0:inf];
+parameter real UA=851.3E-12			        from[0:inf];
+parameter real UB=3.262E-20			        from[0:inf];
+parameter real UC=-0.0465			      from[-10:inf];
+parameter real UD=0			            from[-1:inf];
+parameter real UP=0			            from[-1:inf];
+parameter real Leff=1E-8			      from[0:inf];
+parameter real LP=1E-8			        from[0:inf];
+parameter real K2=-0.0900                 from[0.0:inf];
+
+//DIBL and SCE
+
+parameter real NDEP=1.7E17          from[0.0:inf];
+parameter real Nsd=1E20             from[0.0:inf];
+parameter real NETA=1E6			        from[-2:inf];
+
+parameter real lambda=0.1			      from[0:inf];
+
+parameter real VSAT=80.00E3			        from[0:inf];
+
+
+
+
+real Cox,Phi_s,gamma,Vt, Vdsat,Ids,Vds,Vgs,Vb,Vg,Vs,Vd,Vbs,Vdseff,Vgsteff,K;
+real fLeff,Vbc,Vbseff,ueff;
+real Xdep,Lt,theta,Vbi,deltavth,Vth;
+real CLM,Esat;
+real alpha,Qi,Qd,Qs,Qb,Qg,a3,Qa,norml;
+
+
+analog begin
+Vd=V(d,gnd);
+Vs=V(s,gnd);
+Vb=V(b,gnd);
+Vg=V(g,gnd);
+
+
+Vds=V(d,s);
+Vgs=V(g,s);
+Vbs=V(b,s);
+
+
+
+///threshold voltage model
+Cox=((EPSROX*EPS0)/Tox);
+Phi_s=2*vt*ln(Nsub/ni);
+gamma=(sqrt(2*q*EPSROX*EPS0*Nsub))/Cox;
+Vt=VTH0+gamma*(sqrt(Phi_s-Vbs)-sqrt(Phi_s))-K1*Vbs;
+
+
+///DIBL AND SCE
+Xdep=sqrt((EPSI*EPS0*2*(Phi_s-Vbs))/(q*NDEP));
+Lt=sqrt((EPSI*Tox*Xdep)/(EPSROX*NETA));
+theta=0.5/cosh((Leff/Lt) - 1);
+Vbi=vt*ln((NDEP*Nsd)/pow(ni,2));
+deltavth =-theta*(2 *(Vbi-Phi_s)+Vds);
+Vth=Vt+deltavth;
+
+
+
+
+//MOBILITY DEGREDATION
+fLeff = 1-UP*exp(-Leff/LP);
+Vgsteff=(2*vt*n*ln(1 + exp((Vgs -Vth)/(2*vt*n))))/(1 + 2*n*exp(-(Vgs-Vth-2*Voff)/(2*n*vt)));
+Vbc=0.9*(Phi_s-(pow(K1,2)/(4*pow(K2,2))));
+Vbseff=Vbc+0.5 *((Vbs-Vbc-DELTA)+sqrt(pow(Vbs-Vbc-DELTA,2)-(4 * DELTA*Vbc))); 
+ueff=(U0*fLeff)/(1+(UA*((Vgsteff+2*Vth)/Tox )+UB*pow(((Vgsteff+2*Vth)/Tox),2))*(1+UC*Vbseff)+UD*pow(((Vth *Tox)/(Vgsteff+2*sqrt(pow(Vth,2)+0.0001))),2));
+
+
+
+
+
+//CLM Effect
+CLM=1+lambda*Vds;
+
+//Velocity saturation effect
+Esat=(2*VSAT)/ueff;
+
+//drain current
+Vdsat=(Vgsteff+2*vt)/m;
+Vdseff =Vdsat-0.5 *((Vdsat-Vds-DELTA)+sqrt(pow(Vdsat-Vds-DELTA,2)+(4*DELTA*Vdsat)));
+K= Cox*(W/L);
+Ids =ueff*K*Vgsteff *(1 -(m/2) *(Vdseff/(Vgsteff + 2*vt)))*Vdseff*CLM*(1/(1+Vds/(L*Esat))) ;
+
+I(d,s)<+Ids;
+
+
+
+
+//Terminal charges
+alpha=1-Vdseff/Vdsat;
+norml=(1/(W*L*Cox));
+Qi=(-0.667)*W*L*Cox*Vgsteff*((1+alpha+pow(alpha,2))/(1+alpha))*norml;
+Qd=(-0.133)*W*L*Cox*Vgsteff*((3*pow(alpha,3)+6*pow(alpha,2)+4*alpha+2)/pow((1+alpha),2))*norml;
+Qs=(-0.133)*W*L*Cox*Vgsteff*((2*pow(alpha,3)+4*pow(alpha,2)+6*alpha+3)/pow((1+alpha),2))*norml;
+a3=1-((0.667)*((1+alpha+pow(alpha,2))/(1+alpha)));
+Qb=-W*L*Cox*(m-1)*((Vgsteff/m)*a3+2*(2*Phi_s-Vbs))*norml;
+Qa = W*L*Cox*(Vbs-VFBCV)*norml;
+Qg=(Qa+Qb+Qi);
+
+
+
+I(s) <+ ddt(Qs);
+I(d) <+ ddt(Qd);
+I(g) <+ ddt(Qg);
+I(b) <+ ddt(Qb);
+
+end
+endmodule 
+
